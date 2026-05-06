@@ -23,6 +23,39 @@
 
 #include "portfolioExercise_extra.h"        // Contains routines not essential to the assessment.
 
+typedef struct {
+    int threadID;
+    int N;
+    int nThreads;
+    float **M;
+    float *u;
+    float *v;
+    float partialResultDot;
+} ThreadArgs;
+
+void *threadWork( void*arg )
+{
+    ThreadArgs *a = (ThreadArgs*) arg;
+    
+    int rowsPerThread = a->N / a->nThreads;
+    int startRow = a->threadID * rowsPerThread;
+    int endRow = startRow + rowsPerThread;
+
+    for( int row = startRow; row < endRow; row++ )
+    {
+        a->v[row] = 0.0f;
+        for( int col = 0; col < a->N; col++ )
+            a->v[row] += a->M[row][col] * a->u[col];
+    }
+
+    float partial = 0.0f;
+    for( int i = startRow; i < endRow; i++ )
+        partial += a->v[i] * a->v[i];
+
+    a->partialResultDot = partial;
+
+    return NULL;
+}
 
 //
 // Main.
@@ -55,10 +88,40 @@ int main( int argc, char **argv )
 
     // Step 1. Matrix-vector multiplication Mu = v.
 
+    pthread_t *threads = malloc( nThreads*sizeof(pthread_t) );
+    ThreadArgs *args = malloc( nThreads*sizeof(ThreadArgs) );
+
+    if ( !threads || !args )
+    {
+        printf( "[!] Error: Could not allocate memory for thread data.\n");
+        return EXIT_FAILURE;
+    }
+
+    for ( int t = 0; t < nThreads; t++ )
+    {
+        args[t].threadID = t;
+        args[t].N = N;
+        args[t].nThreads = nThreads;
+        args[t].M = M;
+        args[t].u= u;
+        args[t].v = v;
+        args[t].partialResultDot = 0.0f;
+
+        pthread_create( &threads[t], NULL, threadWork, &args[t] );
+    }
+
+    for( int t = 0; t < nThreads; t++ )
+        pthread_join( threads[t], NULL );
     // After completing Step 1, you can uncomment the following line to display M, u and v, to check your solution so far.
     // if( N<=12 ) displayProblem( N, M, u, v );
 
     // Step 2. The dot product of the vector v with itself.
+
+    for( int t = 0; t < nThreads; t++ )
+        dotProduct += args[t].partialResultDot;
+    
+    free ( threads );
+    free( args );
 
     // DO NOT REMOVE OR MODIFY THIS PRINT STATEMENT AS IT IS REQUIRED BY THE ASSESSMENT.
     printf( "Result of parallel calculation: %f\n", dotProduct );
